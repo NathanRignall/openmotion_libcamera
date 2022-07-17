@@ -14,7 +14,7 @@ target_sources(openmotion_libcamera
     INTERFACE
     ./src/openmotion_libcamera.cpp
     ./src/libcamera_app.cpp
-    ./src/libcamera_options.cpp
+    ./src/libcamera_app_options.cpp
 )
 
 target_link_libraries(openmotion_libcamera INTERFACE pthread ${LIBCAMERA_LINK_LIBRARIES} ${OpenCV_LIBS})
