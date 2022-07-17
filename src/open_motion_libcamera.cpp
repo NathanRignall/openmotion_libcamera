@@ -1,9 +1,9 @@
-#include "lccv.hpp"
+#include "openmotion_libcamera.hpp"
 #include <libcamera/libcamera/stream.h>
 #include <time.h>
 
 using namespace cv;
-using namespace lccv;
+using namespace open_motion;
 
 PiCamera::PiCamera()
 {
@@ -23,10 +23,12 @@ PiCamera::PiCamera()
     options->contrast = 1.0f;
     options->saturation = 1.0f;
     still_flags |= LibcameraApp::FLAG_STILL_RGB;
-    running.store(false, std::memory_order_release);;
-    frameready.store(false, std::memory_order_release);;
-    framebuffer=nullptr;
-    camerastarted=false;
+    running.store(false, std::memory_order_release);
+    ;
+    frameready.store(false, std::memory_order_release);
+    ;
+    framebuffer = nullptr;
+    camerastarted = false;
 }
 
 PiCamera::~PiCamera()
@@ -38,14 +40,14 @@ void PiCamera::getImage(cv::Mat &frame, CompletedRequestPtr &payload)
 {
     unsigned int w, h, stride;
     libcamera::Stream *stream = app->StillStream();
-	app->StreamDimensions(stream, &w, &h, &stride);
+    app->StreamDimensions(stream, &w, &h, &stride);
     const std::vector<libcamera::Span<uint8_t>> mem = app->Mmap(payload->buffers[stream]);
-    frame.create(h,w,CV_8UC3);
-    uint ls = w*3;
+    frame.create(h, w, CV_8UC3);
+    uint ls = w * 3;
     uint8_t *ptr = (uint8_t *)mem[0].data();
     for (unsigned int i = 0; i < h; i++, ptr += stride)
     {
-        memcpy(frame.ptr(i),ptr,ls);
+        memcpy(frame.ptr(i), ptr, ls);
     }
 }
 
@@ -53,13 +55,14 @@ bool PiCamera::startPhoto()
 {
     app->OpenCamera();
     app->ConfigureStill(still_flags);
-    camerastarted=true;
+    camerastarted = true;
     return true;
 }
 bool PiCamera::stopPhoto()
 {
-    if(camerastarted){
-        camerastarted=false;
+    if (camerastarted)
+    {
+        camerastarted = false;
         app->Teardown();
         app->CloseCamera();
     }
@@ -68,7 +71,8 @@ bool PiCamera::stopPhoto()
 
 bool PiCamera::capturePhoto(cv::Mat &frame)
 {
-    if(!camerastarted){
+    if (!camerastarted)
+    {
         app->OpenCamera();
         app->ConfigureStill(still_flags);
     }
@@ -84,11 +88,14 @@ bool PiCamera::capturePhoto(cv::Mat &frame)
         getImage(frame, std::get<CompletedRequestPtr>(msg.payload));
         app->Teardown();
         app->CloseCamera();
-    } else {
-        std::cerr<<"Incorrect stream received"<<std::endl;
+    }
+    else
+    {
+        std::cerr << "Incorrect stream received" << std::endl;
         return false;
         app->StopCamera();
-        if(!camerastarted){
+        if (!camerastarted)
+        {
             app->Teardown();
             app->CloseCamera();
         }
@@ -98,9 +105,11 @@ bool PiCamera::capturePhoto(cv::Mat &frame)
 
 bool PiCamera::startVideo()
 {
-    if(camerastarted)stopPhoto();
-    if(running.load(std::memory_order_release)){
-        std::cerr<<"Video thread already running";
+    if (camerastarted)
+        stopPhoto();
+    if (running.load(std::memory_order_release))
+    {
+        std::cerr << "Video thread already running";
         return false;
     }
     frameready.store(false, std::memory_order_release);
@@ -109,8 +118,9 @@ bool PiCamera::startVideo()
     app->StartCamera();
 
     int ret = pthread_create(&videothread, NULL, &videoThreadFunc, this);
-    if (ret != 0) {
-        std::cerr<<"Error starting video thread";
+    if (ret != 0)
+    {
+        std::cerr << "Error starting video thread";
         return false;
     }
     return true;
@@ -118,43 +128,50 @@ bool PiCamera::startVideo()
 
 void PiCamera::stopVideo()
 {
-    if(!running)return;
+    if (!running)
+        return;
 
-    running.store(false, std::memory_order_release);;
+    running.store(false, std::memory_order_release);
+    ;
 
-    //join thread
+    // join thread
     void *status;
     int ret = pthread_join(videothread, &status);
-    if(ret<0)
-        std::cerr<<"Error joining thread"<<std::endl;
+    if (ret < 0)
+        std::cerr << "Error joining thread" << std::endl;
 
     app->StopCamera();
     app->Teardown();
     app->CloseCamera();
-    frameready.store(false, std::memory_order_release);;
+    frameready.store(false, std::memory_order_release);
+    ;
 }
 
 bool PiCamera::getVideoFrame(cv::Mat &frame, unsigned int timeout)
 {
-    if(!running.load(std::memory_order_acquire))return false;
+    if (!running.load(std::memory_order_acquire))
+        return false;
     auto start_time = std::chrono::high_resolution_clock::now();
     bool timeout_reached = false;
     timespec req;
-    req.tv_sec=0;
-    req.tv_nsec=1000000;//1ms
-    while((!frameready.load(std::memory_order_acquire))&&(!timeout_reached)){
-        nanosleep(&req,NULL);
+    req.tv_sec = 0;
+    req.tv_nsec = 1000000; // 1ms
+    while ((!frameready.load(std::memory_order_acquire)) && (!timeout_reached))
+    {
+        nanosleep(&req, NULL);
         timeout_reached = (std::chrono::high_resolution_clock::now() - start_time > std::chrono::milliseconds(timeout));
     }
-    if(frameready.load(std::memory_order_acquire)){
-        frame.create(vh,vw,CV_8UC3);
-        uint ls = vw*3;
+    if (frameready.load(std::memory_order_acquire))
+    {
+        frame.create(vh, vw, CV_8UC3);
+        uint ls = vw * 3;
         mtx.lock();
-            uint8_t *ptr = framebuffer;
-            for (unsigned int i = 0; i < vh; i++, ptr += vstr)
-                memcpy(frame.ptr(i),ptr,ls);
+        uint8_t *ptr = framebuffer;
+        for (unsigned int i = 0; i < vh; i++, ptr += vstr)
+            memcpy(frame.ptr(i), ptr, ls);
         mtx.unlock();
-        frameready.store(false, std::memory_order_release);;
+        frameready.store(false, std::memory_order_release);
+        ;
         return true;
     }
     else
@@ -165,35 +182,38 @@ void *PiCamera::videoThreadFunc(void *p)
 {
     PiCamera *t = (PiCamera *)p;
     t->running.store(true, std::memory_order_release);
-    //allocate framebuffer
-    //unsigned int vw,vh,vstr;
-    libcamera::Stream *stream = t->app->ViewfinderStream(&t->vw,&t->vh,&t->vstr);
-    int buffersize=t->vh*t->vstr;
-    if(t->framebuffer)delete[] t->framebuffer;
-    t->framebuffer=new uint8_t[buffersize];
+    // allocate framebuffer
+    // unsigned int vw,vh,vstr;
+    libcamera::Stream *stream = t->app->ViewfinderStream(&t->vw, &t->vh, &t->vstr);
+    int buffersize = t->vh * t->vstr;
+    if (t->framebuffer)
+        delete[] t->framebuffer;
+    t->framebuffer = new uint8_t[buffersize];
     std::vector<libcamera::Span<uint8_t>> mem;
 
-    //main loop
-    while(t->running.load(std::memory_order_acquire)){
+    // main loop
+    while (t->running.load(std::memory_order_acquire))
+    {
         LibcameraApp::Msg msg = t->app->Wait();
-        if (msg.type == LibcameraApp::MsgType::Quit){
-            std::cerr<<"Quit message received"<<std::endl;
-            t->running.store(false,std::memory_order_release);
+        if (msg.type == LibcameraApp::MsgType::Quit)
+        {
+            std::cerr << "Quit message received" << std::endl;
+            t->running.store(false, std::memory_order_release);
         }
         else if (msg.type != LibcameraApp::MsgType::RequestComplete)
             throw std::runtime_error("unrecognised message!");
 
-
         CompletedRequestPtr payload = std::get<CompletedRequestPtr>(msg.payload);
         mem = t->app->Mmap(payload->buffers[stream]);
         t->mtx.lock();
-            memcpy(t->framebuffer,mem[0].data(),buffersize);
+        memcpy(t->framebuffer, mem[0].data(), buffersize);
         t->mtx.unlock();
         t->frameready.store(true, std::memory_order_release);
     }
-    if(t->framebuffer){
+    if (t->framebuffer)
+    {
         delete[] t->framebuffer;
-        t->framebuffer=nullptr;
+        t->framebuffer = nullptr;
     }
     return NULL;
 }
